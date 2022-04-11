@@ -53,6 +53,17 @@ static uint16_t get_next_port_in_range(uint16_t begin, uint16_t end) {
 	return next;
 }
 
+static struct addrinfo *try_create_socket(struct addrinfo *ai_list, int family, socket_t *sock) {
+	struct addrinfo *ai = find_family(ai_list, family);
+	if (ai == NULL) return NULL;
+	*sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+	if (*sock == INVALID_SOCKET) {
+		JLOG_WARN("Socket creation attempt for %s failed, errno=%d", ai->ai_canonname, sockerrno);
+		return NULL;
+	}
+	return ai;
+}
+
 socket_t udp_create_socket(const udp_socket_config_t *config) {
 	socket_t sock = INVALID_SOCKET;
 
@@ -69,19 +80,12 @@ socket_t udp_create_socket(const udp_socket_config_t *config) {
 		return INVALID_SOCKET;
 	}
 
-	// Prefer IPv6
 	struct addrinfo *ai;
-	if ((ai = find_family(ai_list, AF_INET6)) == NULL &&
-	    (ai = find_family(ai_list, AF_INET)) == NULL) {
-		JLOG_ERROR("getaddrinfo for binding address failed: no suitable "
-		           "address family");
-		goto error;
-	}
 
-	// Create socket
-	sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-	if (sock == INVALID_SOCKET) {
-		JLOG_ERROR("UDP socket creation failed, errno=%d", sockerrno);
+	// Prefer IPv6
+	if ((ai = try_create_socket(ai_list, AF_INET6, &sock)) == NULL &&
+		(ai = try_create_socket(ai_list, AF_INET, &sock)) == NULL) {
+		JLOG_ERROR("UDP socket creation failed: no suitable address family");
 		goto error;
 	}
 
